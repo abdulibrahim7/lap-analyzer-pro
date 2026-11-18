@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Lap Analyzer Pro — Actionable Coaching</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+body{margin:0;background:#0b0f14;color:#e8f0fa;font-family:system-ui,Segoe UI,Roboto,Arial}
+.wrap{max-width:960px;margin:24px auto;padding:0 16px}
+.card{background:#111821;border:1px solid #263241;border-radius:14px;padding:16px;margin-bottom:16px}
+.btn{background:#3fb950;color:#062312;border:none;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}
+.btn:disabled{opacity:.55;cursor:wait} table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #263241;text-align:left} th,.muted{color:#9bb0c6}
+pre{font-family:inherit;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;background:#0f141b;border:1px solid #263241;border-radius:10px;padding:12px}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center} .warning{color:#ffb86c}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="card">
+    <h1 style="font-size:24px;margin:0 0 8px">Lap Analyzer Pro — Actionable Coaching</h1>
+    <div class="muted">Lap Analyzer Pro transforms lap data into clear, actionable coaching insights. By comparing your time loss per corner, it pinpoints where you're losing time and generates personalized practice suggestions. Upload a summary of your lap data to prioritize improvements in braking, rotation and throttle application for your next session.</div>
+  </div>
+  <div class="card controls">
+    <label for="file">Telemetry CSV</label><input id="file" type="file" accept=".csv,text/csv"/>
+    <button id="go" class="btn">Analyze &amp; Coach</button>
+    <span id="status" class="muted" role="status" aria-live="polite"></span>
+  </div>
+  <div class="card">
+    <h2 style="font-size:19px;margin-top:0">Top Corners</h2>
+    <table id="tbl"><thead><tr><th>Corner</th><th>Loss (s)</th></tr></thead><tbody></tbody></table>
+    <div id="summary" class="muted" style="margin-top:8px"></div>
+  </div>
+  <div class="card">
+    <h2 style="font-size:19px;margin-top:0">Coaching Feedback</h2>
+    <div id="source" class="muted" role="status"></div>
+    <pre id="coach" aria-live="polite">Run analysis to generate coaching feedback...</pre>
+    <small class="muted">Review between closed-course sessions. Time loss alone cannot establish a driving fault.</small>
+  </div>
+</main>
+<script>
+// Current implementation serves UI and API together; old file:// mode is opt-in.
+const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
+const $ = id => document.getElementById(id);
+function setStatus(msg){ $('status').textContent = msg || ''; }
+async function postJSON(url, data){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok){ let detail; try{detail=(await r.json()).detail;}catch{} throw new Error(typeof detail==='string'?detail:`Request failed (${r.status})`); }
+  return r.json();
+}
+$('go').onclick = async ()=>{
+  const f = $('file').files[0];
+  if(!f){setStatus('Choose a CSV first.');return;}
+  if(f.size>2000000){setStatus('CSV exceeds 2 MB.');return;}
+  $('go').disabled=true;
+  const tb=document.querySelector('#tbl tbody'); tb.replaceChildren();
+  $('summary').textContent=''; $('source').textContent=''; $('coach').textContent='Working…';
+  try{
+    setStatus('Analyzing…');
+    const analysis=await postJSON(`${API_BASE}/analyze`,{csv_text:await f.text()});
+    for(const r of analysis.top_corners){
+      const tr=document.createElement('tr');
+      for(const v of [r.corner,r.time_loss.toFixed(2)]){const td=document.createElement('td');td.textContent=v;tr.append(td);}
+      tb.append(tr);
+    }
+    $('summary').textContent=`Rows: ${analysis.row_count} • Total measured loss: ${analysis.total_time_loss.toFixed(2)}s`;
+    setStatus('Generating coaching feedback…');
+    const coached=await postJSON(`${API_BASE}/coach`,analysis);
+    $('coach').textContent=coached.coaching_text || 'No feedback produced.';
+    $('source').textContent=coached.source==='llm'?`AI-generated • ${coached.model}`:(coached.warning || 'Rule-based guidance');
+    $('source').className=coached.source==='llm'?'muted':'warning';
+    setStatus('Ready');
+  }catch(e){setStatus('Request failed');$('coach').textContent=e instanceof TypeError?'Cannot reach backend. Start the launcher and use its browser URL.':e.message;}
+  finally{$('go').disabled=false;}
+};
+fetch(`${API_BASE}/health`).then(r=>{if(!r.ok)throw Error();return r.json();}).then(()=>setStatus('Server ready')).catch(()=>setStatus('Backend not reachable'));
+</script>
+</body>
+</html>

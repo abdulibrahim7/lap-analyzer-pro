@@ -1,0 +1,7 @@
+fastapi==0.165.0
+starlette==1.10.0
+uvicorn==0.48.0
+httpx==0.28.1
+python-multipart==0.0.34
+pydantic>=2.7,<3
+python-dotenv>=1.0,<2
